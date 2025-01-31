@@ -21,7 +21,9 @@ configurations {
 
 repositories {
     mavenCentral()
+    maven { url 'https://jitpack.io' }
 }
+
 
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
@@ -69,6 +71,12 @@ dependencies {
 
     // mail
     implementation 'org.springframework.boot:spring-boot-starter-mail'
+
+    //portOne
+    implementation 'com.github.iamport:iamport-rest-client-java:0.2.23'
+    implementation 'org.springframework.boot:spring-boot-starter-webflux'
+    implementation 'me.paulschwarz:spring-dotenv:2.5.4'
+
 }
 
 tasks.named('test') {
