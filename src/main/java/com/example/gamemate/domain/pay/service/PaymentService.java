@@ -1,170 +1,168 @@
 package com.example.gamemate.domain.pay.service;
 
-import com.example.gamemate.domain.pay.dto.*;
-import com.example.gamemate.domain.user.entity.User;
-import com.example.gamemate.domain.user.enums.Role;
-import com.example.gamemate.domain.user.repository.UserRepository;
-import com.example.gamemate.global.constant.ErrorCode;
-import com.example.gamemate.global.exception.ApiException;
+import com.example.gamemate.domain.pay.dto.PaymentRequest;
+import com.example.gamemate.domain.pay.dto.PaymentResponse;
+import com.example.gamemate.domain.pay.dto.WebhookRequest;
 import com.example.gamemate.domain.pay.entity.Payment;
 import com.example.gamemate.domain.pay.enums.PaymentStatus;
 import com.example.gamemate.domain.pay.repository.PaymentRepository;
-import jakarta.transaction.Transactional;
+import com.example.gamemate.global.constant.ErrorCode;
+import com.example.gamemate.global.exception.ApiException;
+import com.siot.IamportRestClient.IamportClient;
+import com.siot.IamportRestClient.exception.IamportResponseException;
+import com.siot.IamportRestClient.request.CancelData;
+import com.siot.IamportRestClient.response.IamportResponse;
+import com.siot.IamportRestClient.request.PrepareData;
+import com.siot.IamportRestClient.response.Prepare;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
+import org.springframework.transaction.annotation.Transactional;
 
+
+import java.io.IOException;
 import java.math.BigDecimal;
-import java.util.Map;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PaymentService {
+    private  PaymentRepository paymentRepository;
+    private  IamportClient client;
 
-    private final UserRepository userRepository;
-    private final PaymentRepository paymentRepository;
-    private final PortoneService portoneService;
-    private final WebClient webClient;
+    @Value("${portone.imp-key}")
+    private String impKey;
 
-    /**
-     * 결제 추가
-     */
+    @Value("${portone.imp-secret}")
+    private String impSecret;
+
     @Transactional
-    public PaymentResponseDto createPayment(PaymentRequestDto paymentRequestDto,
-                                            User loginUser) {
+    public PaymentResponse requestPayment(PaymentRequest request) {
+        String merchantUid = "order_" + UUID.randomUUID().toString();
 
-        User user = userRepository.findById(loginUser.getId()).orElseThrow(
-                () -> new ApiException(ErrorCode.USER_NOT_FOUND));
+        try {
+            BigDecimal amount = request.getAmount();
+            PrepareData prepareData = new PrepareData(merchantUid, amount);
 
-        String token = portoneService.portoneToken();
+            IamportResponse<Prepare> prepareResponse = client.postPrepare(prepareData);
 
-        Payment payment = new Payment(
-                paymentRequestDto.getPayUid(),
-                paymentRequestDto.getPortoneUid(),
-                paymentRequestDto.getAmount(),
-                paymentRequestDto.getStatus(),
-                paymentRequestDto.getDetails(),
-                user
-        );
+            Payment payment = Payment.builder()
+                    .merchantUid(merchantUid)
+                    .amount(request.getAmount())
+                    .buyerEmail(request.getBuyerEmail())
+                    .status(PaymentStatus.READY)
+                    .build();
 
-        // 결제 정보 단건 조회
-        PaidPaymentResponseDto responseEntity = getPaymentData(paymentRequestDto.getPayUid(), token);
-        BigDecimal totalAmount = BigDecimal.valueOf(responseEntity.getAmount().getTotal());
-
-        // 요청금액과 결제 금액이 같은지, 결제에 성공한 상태인지 검증
-        if (payment.getAmount().compareTo(totalAmount) == 0 && responseEntity.getStatus().equals("PAID")) {
-            payment = paymentRepository.save(payment);
-
-        } else {
-            PaymentCancelRequestDto cancelRequest = new PaymentCancelRequestDto(
-                    payment.getId(),
-                    payment.getAmount(),
-                    "결제 금액 오류"
-            );
-            cancelPayment(cancelRequest);
-
-            throw new ApiException(ErrorCode.GAME_NOT_FOUND);//일심 수정 필요
+            return paymentRepository.save(payment).toResponse();
+        } catch (IamportResponseException | IOException e) {
+            log.error("Error preparing payment", e);
+            //  throw new PaymentCreationException("Failed to prepare payment", e);
+            throw new ApiException(ErrorCode.GAME_NOT_FOUND);
         }
-
-        PaymentResponseDto paymentResponseDto = new PaymentResponseDto(
-                payment.getPayUid(),
-                payment.getPortoneUid(),
-                payment.getAmount(),
-                payment.getDetails(),
-                payment.getPayStatus()
-        );
-
-        return paymentResponseDto;
     }
 
-
-    /**
-     * 결제 취소
-     */
     @Transactional
-    public PaymentResponseDto cancelPayment(PaymentCancelRequestDto paymentCancelRequestDto) {
-        Payment payment = paymentRepository.findById(paymentCancelRequestDto.getPaymentId()).orElseThrow();
-        String token = portoneService.portoneToken();
+    public void verifyPayment(String impUid) throws IamportResponseException, IOException {
+        IamportResponse<com.siot.IamportRestClient.response.Payment> portonePayment = client.paymentByImpUid(impUid);
 
-        // 결제 정보 단건 조회
-        PaidPaymentResponseDto responseEntity = getPaymentData(payment.getPayUid(), token);
-        BigDecimal totalAmount = BigDecimal.valueOf(responseEntity.getAmount().getTotal());
-
-        // 환불 요청금액이 DB 와 같은지, 포트원에 넘어간 금액과 같은지 검증
-        if (payment.getAmount().compareTo(paymentCancelRequestDto.getAmount()) != 0 || totalAmount.compareTo(paymentCancelRequestDto.getAmount()) != 0) {
-            throw new ApiException(ErrorCode.GAME_NOT_FOUND);//수정 필요
+        Payment payment = paymentRepository.findByMerchantUid(portonePayment.getResponse().getMerchantUid())
+                .orElseThrow(() ->
+                        //new PaymentNotFoundException("Payment not found: " + portonePayment.getResponse().getMerchantUid()));
+                new ApiException(ErrorCode.GAME_NOT_FOUND));
+        if (!portonePayment.getResponse().getAmount().equals(payment.getAmount())) {
+            //throw new AmountMismatchException("Amount mismatch for payment: " + impUid);
+            throw new ApiException(ErrorCode.GAME_NOT_FOUND);
         }
 
-        if (payment.getPayStatus().equals(PaymentStatus.PAID)) {
-            // 결제 취소
-            String url = "/payments/" + payment.getPayUid() + "/cancel";
+        Payment updatedPayment = Payment.builder()
+                .id(payment.getId())
+                .merchantUid(payment.getMerchantUid())
+                .impUid(impUid)
+                .amount(payment.getAmount())
+                .buyerEmail(payment.getBuyerEmail())
+                .status(PaymentStatus.PAID)
+                .build();
 
-            payment.updatePayStatus(PaymentStatus.CANCELLED, paymentCancelRequestDto.getReason());
-
-            webClient.post()
-                    .uri(url)
-                    .header("Authorization", "Bearer " + token)
-                    .body(Mono.just(Map.of("reason", paymentCancelRequestDto.getReason())), Map.class)
-                    .retrieve()
-                    .bodyToMono(Void.class)
-                    .block();
-
-            PaymentResponseDto paymentResponseDto = new PaymentResponseDto(
-                    payment.getPayUid(),
-                    payment.getPortoneUid(),
-                    payment.getAmount(),
-                    payment.getDetails(),
-                    payment.getPayStatus()
-            );
-
-            return paymentResponseDto;
-        } else {
-            throw new ApiException(ErrorCode.GAME_NOT_FOUND);//수정 필요
-        }
+        paymentRepository.save(updatedPayment);
     }
 
+    @Transactional
+    public void processWebhook(WebhookRequest webhookRequest) throws IamportResponseException, IOException {
+        String impUid = webhookRequest.getImp_uid();
+        String merchantUid = webhookRequest.getMerchant_uid();
+        String status = webhookRequest.getStatus();
 
-    /**
-     * 결제 조회
-     * 1.
-     * 2. 전체 검색의 경우 일반 유저 사용
-     */
-    public PaymentListResponseDto getAllPayments(User loginUser, String type, int page, int size
-    ) {
-        Pageable pageable = PageRequest.of(page - 1, size);
-        Page<PaymentGetResponseDto> payments;
+        IamportResponse<com.siot.IamportRestClient.response.Payment> portonePayment = client.paymentByImpUid(impUid);
 
-
-        if (type != null && !type.isEmpty()) {
-            if (loginUser.getRole().equals(Role.ADMIN)) {
-                payments = paymentRepository.findAllPayments(pageable);
-            } else {
-                throw new ApiException(ErrorCode.FORBIDDEN);
-            }
-        } else {
-            if (loginUser.getRole().equals(Role.USER)) {
-                payments = paymentRepository.findByUserData(loginUser.getId(), pageable);
-            } else {
-                throw new ApiException(ErrorCode.FORBIDDEN);
-            }
+        Payment payment = paymentRepository.findByMerchantUid(merchantUid)
+                .orElseThrow(() ->
+                        //new PaymentNotFoundException("Payment not found: " + merchantUid));
+                        new ApiException(ErrorCode.GAME_NOT_FOUND));
+        PaymentStatus newStatus;
+        switch(status) {
+            case "paid":
+                if (!portonePayment.getResponse().getAmount().equals(payment.getAmount())) {
+                    //throw new AmountMismatchException("Amount mismatch for payment: " + merchantUid);
+                    new ApiException(ErrorCode.GAME_NOT_FOUND);
+                }
+                newStatus = PaymentStatus.PAID;
+                break;
+            case "cancelled":
+                newStatus = PaymentStatus.CANCELLED;
+                break;
+            case "failed":
+                newStatus = PaymentStatus.FAILED;
+                break;
+            default:
+                log.warn("Unhandled payment status: {}", status);
+                return;
         }
 
-        return new PaymentListResponseDto(page, size, payments.getTotalElements(), payments.getTotalPages(), payments.getContent());
+        Payment updatedPayment = Payment.builder()
+                .id(payment.getId())
+                .merchantUid(payment.getMerchantUid())
+                .impUid(impUid)
+                .amount(payment.getAmount())
+                .buyerEmail(payment.getBuyerEmail())
+                .status(newStatus)
+                .build();
+
+        paymentRepository.save(updatedPayment);
     }
 
-    /**
-     * 검증을 위한 결제 단건 조회
-     */
-    public PaidPaymentResponseDto getPaymentData(String paymentId, String token) {
-        return webClient.get()
-                .uri("/payments/" + paymentId)
-                .header("Authorization", "Bearer " + token)
-                .retrieve()
-                .bodyToMono(PaidPaymentResponseDto.class)
-                .block();
+    public List<PaymentResponse> getUserPayments(String email) {
+        return paymentRepository.findByBuyerEmail(email).stream()
+                .map(Payment::toResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public PaymentResponse cancelPayment(String impUid) throws IamportResponseException, IOException {
+        Payment payment = paymentRepository.findByImpUid(impUid)
+                .orElseThrow(() ->
+                        //new PaymentNotFoundException("Payment not found: " + impUid));
+                        new ApiException(ErrorCode.GAME_NOT_FOUND));
+
+        if (payment.getStatus() != PaymentStatus.PAID) {
+            throw new IllegalStateException("Payment is not in PAID status");
+        }
+
+        CancelData cancelData = new CancelData(impUid, true); // 전체 취소
+        IamportResponse<com.siot.IamportRestClient.response.Payment> response = client.cancelPaymentByImpUid(cancelData);
+
+        Payment cancelledPayment = Payment.builder()
+                .id(payment.getId())
+                .merchantUid(payment.getMerchantUid())
+                .impUid(payment.getImpUid())
+                .amount(payment.getAmount())
+                .buyerEmail(payment.getBuyerEmail())
+                .status(PaymentStatus.CANCELLED)
+                .build();
+
+        return paymentRepository.save(cancelledPayment).toResponse();
     }
 }

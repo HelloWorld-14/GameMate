@@ -15,6 +15,5 @@ public class PaymentRequestDto {
     private final String portoneUid;
     private final BigDecimal amount;
     private final String details;
-    private final PaymentType type;
     private final PaymentStatus status;
 }
