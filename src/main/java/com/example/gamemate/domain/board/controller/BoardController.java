@@ -10,6 +10,7 @@ import com.example.gamemate.domain.user.entity.User;
 import com.example.gamemate.global.config.auth.CustomUserDetails;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -24,6 +25,7 @@ import java.util.List;
 @RequiredArgsConstructor
 @RestController
 @RequestMapping("/boards")
+@Slf4j
 public class BoardController {
 
     private final BoardService boardService;
@@ -40,7 +42,7 @@ public class BoardController {
             @Valid @RequestBody BoardRequestDto dto,
             @AuthenticationPrincipal CustomUserDetails customUserDetails
     ){
-
+        log.info("게시글 생성");
         BoardResponseDto responseDto = boardService.createBoard(customUserDetails.getUser(), dto);
         return new ResponseEntity<>(responseDto, HttpStatus.CREATED);
     }
@@ -56,11 +58,12 @@ public class BoardController {
     public ResponseEntity<List<BoardFindAllResponseDto>> findTopBoards(
             @RequestParam(required = false) String category
     ) {
-
+        log.info("조회수 높은 게시글 조회");
         BoardCategory boardCategory = null;
         if (category != null) {
             boardCategory = BoardCategory.fromName(category);
         }
+
 
         List<BoardFindAllResponseDto> dtos = boardService.findTopBoards(boardCategory);
         if(dtos.isEmpty()){
