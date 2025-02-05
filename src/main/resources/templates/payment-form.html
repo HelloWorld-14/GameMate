@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>결제 페이지</title>
+    <!-- 포트원 SDK 추가 -->
+    <script src="https://cdn.portone.io/v2/browser-sdk.prod.js"></script>
+</head>
+<body>
+<form th:action="@{/payment}" method="post" id="paymentForm">
+    <input type="text" th:field="*{paymentRequest.orderName}" placeholder="주문명" id="orderName">
+    <input type="number" th:field="*{paymentRequest.amount}" placeholder="금액" id="amount">
+    <button type="button" onclick="requestPayment()">결ㄴㄴㄴㄴㄴ제하기</button>
+</form>
+
+<script th:inline="javascript">
+    /* 포트원 설정 주입 */
+    const storeId = /*[[${portone.storeId}]]*/ 'store-f25ca346-f6eb-4519-80bc-7a85f13944a5';
+
+    function requestPayment() {
+        PortOne.requestPayment({
+            storeId: storeId,
+            paymentId: 'PAYMENT_' + Date.now(),
+            amount: document.getElementById('amount').value,
+            orderName: document.getElementById('orderName').value
+        });
+    }
+</script>
+</body>
+</html>

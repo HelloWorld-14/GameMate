@@ -49,6 +49,19 @@
 </div>
 
 <script>
+    // JWT 토큰 관리
+    const token = localStorage.getItem('jwtToken');
+
+    // 인증된 API 요청 함수
+    async function fetchWithAuth(url, options = {}) {
+        options.headers = {
+            ...options.headers,
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        };
+        return fetch(url, options);
+    }
+
     // 결제 요청 처리
     document.getElementById('paymentForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -59,11 +72,14 @@
         };
 
         try {
-            const response = await fetch('http://localhost:8080/api/payments', {
+            const response = await fetchWithAuth('http://localhost:8080/api/payments', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(paymentData)
             });
+
+            if (!response.ok) {
+                throw new Error('결제 요청 실패');
+            }
 
             const result = await response.json();
             alert(`결제 요청 성공! Merchant UID: ${result.merchantUid}`);
@@ -78,15 +94,15 @@
         const impUid = document.getElementById('impUid').value;
 
         try {
-            const response = await fetch(`http://localhost:8080/api/payments/${impUid}/verify`, {
+            const response = await fetchWithAuth(`http://localhost:8080/api/payments/${impUid}/verify`, {
                 method: 'POST'
             });
 
-            if(response.ok) {
-                alert('결제 검증 성공!');
-            } else {
-                alert('결제 검증 실패');
+            if (!response.ok) {
+                throw new Error('결제 검증 실패');
             }
+
+            alert('결제 검증 성공!');
         } catch (error) {
             alert('검증 요청 실패: ' + error.message);
         }
@@ -95,21 +111,64 @@
     // 결제 내역 조회
     async function loadPaymentHistory() {
         try {
-            const response = await fetch('http://localhost:8080/api/payments/history');
+            const response = await fetchWithAuth('http://localhost:8080/api/payments/history');
+
+            if (!response.ok) {
+                throw new Error('내역 조회 실패');
+            }
+
             const payments = await response.json();
 
             const historyContainer = document.getElementById('paymentHistory');
             historyContainer.innerHTML = payments.map(payment => `
-                    <div class="history-item">
-                        <p>결제번호: ${payment.impUid}</p>
-                        <p>금액: ${payment.amount}원</p>
-                        <p>상태: ${payment.status}</p>
-                        <p>일시: ${new Date(payment.paidAt).toLocaleString()}</p>
-                    </div>
-                `).join('');
+                <div class="history-item">
+                    <p>결제번호: ${payment.impUid}</p>
+                    <p>금액: ${payment.amount}원</p>
+                    <p>상태: ${payment.status}</p>
+                    <p>일시: ${new Date(payment.paidAt).toLocaleString()}</p>
+                </div>
+            `).join('');
         } catch (error) {
             alert('내역 조회 실패: ' + error.message);
         }
+    }
+
+    // 토큰 만료 시 재발급 로직
+    async function refreshToken() {
+        const refreshToken = localStorage.getItem('refreshToken');
+        try {
+            const response = await fetch('http://localhost:8080/api/auth/refresh', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${refreshToken}` }
+            });
+
+            if (!response.ok) {
+                throw new Error('토큰 갱신 실패');
+            }
+
+            const { newToken } = await response.json();
+            localStorage.setItem('jwtToken', newToken);
+            return newToken;
+        } catch (error) {
+            console.error('토큰 갱신 실패:', error);
+            // 로그인 페이지로 리다이렉트 또는 다른 처리
+        }
+    }
+
+    // 응답 인터셉터
+    async function handleResponse(response) {
+        if (response.status === 401) {
+            const newToken = await refreshToken();
+            if (newToken) {
+                // 원래 요청 재시도
+                const originalRequest = response.url;
+                return fetchWithAuth(originalRequest, {
+                    method: response.method,
+                    body: response.body
+                });
+            }
+        }
+        return response;
     }
 </script>
 </body>

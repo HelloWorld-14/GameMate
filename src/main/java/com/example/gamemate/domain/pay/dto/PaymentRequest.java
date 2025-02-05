@@ -1,9 +1,11 @@
 package com.example.gamemate.domain.pay.dto;
 
-import jakarta.validation.constraints.DecimalMin;
-import jakarta.validation.constraints.Email;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
+
 import jakarta.validation.constraints.NotBlank;
-import lombok.*;
+import jakarta.validation.constraints.Positive;
 import org.jetbrains.annotations.NotNull;
 
 import java.math.BigDecimal;
@@ -11,14 +13,14 @@ import java.math.BigDecimal;
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
 public class PaymentRequest {
+
     @NotNull
-    @DecimalMin("1000")
-    private BigDecimal amount;
+    private  Long orderId;
 
     @NotBlank
-    @Email
-    private String buyerEmail;
-}
+    private String orderName;
 
+    @Positive
+    private BigDecimal amount;
+}

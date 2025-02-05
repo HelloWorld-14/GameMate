@@ -4,5 +4,14 @@ public enum PaymentStatus {
     READY,
     PAID,
     FAILED,
-    CANCELLED
+    CANCELED;
+
+    public static PaymentStatus fromPortOneStatus(String status) {
+        return switch (status.toUpperCase()) {
+            case "PAID" -> PAID;
+            case "FAILED" -> FAILED;
+            case "CANCELED" -> CANCELED;
+            default -> READY;
+        };
+    }
 }
