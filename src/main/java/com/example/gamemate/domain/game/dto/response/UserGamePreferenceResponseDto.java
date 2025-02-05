@@ -16,6 +16,7 @@ public class UserGamePreferenceResponseDto {
     private String playTime;
     private String difficulty;
     private String platform;
+    private String extraRequest;
     private List<GameRecommendationResponseDto> recommendations;
 
     public UserGamePreferenceResponseDto(UserGamePreference userGamePreference,List<GameRecommendationResponseDto> recommendations) {
@@ -25,6 +26,7 @@ public class UserGamePreferenceResponseDto {
         this.playTime = userGamePreference.getPlayTime();
         this.difficulty = userGamePreference.getDifficulty();
         this.platform = userGamePreference.getPlatform();
+        this.extraRequest =userGamePreference.getExtraRequest();
         this.recommendations =recommendations;
     }
 

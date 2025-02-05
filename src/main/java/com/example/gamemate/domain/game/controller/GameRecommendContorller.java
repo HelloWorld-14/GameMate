@@ -5,6 +5,7 @@ import com.example.gamemate.domain.game.dto.request.UserGamePreferenceRequestDto
 import com.example.gamemate.domain.game.dto.response.UserGamePreferenceResponseDto;
 import com.example.gamemate.domain.game.service.GameRecommendService;
 import com.example.gamemate.global.config.auth.CustomUserDetails;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
@@ -32,7 +33,7 @@ public class GameRecommendContorller {
      */
     @PostMapping
     public ResponseEntity<UserGamePreferenceResponseDto> createUserGamePreference(
-            @RequestBody UserGamePreferenceRequestDto requestDto,
+            @Valid @RequestBody UserGamePreferenceRequestDto requestDto,
             @AuthenticationPrincipal CustomUserDetails customUserDetails
     ) {
 
