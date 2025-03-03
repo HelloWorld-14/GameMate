@@ -8,6 +8,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Entity
@@ -36,7 +37,7 @@ public class Board extends BaseEntity {
     private User user;
 
     @OneToMany(mappedBy = "board")
-    private List<BoardImage> boardImages;
+    private List<BoardImage> boardImages = new ArrayList<>();
 
     public Board(BoardCategory category, String title, String content, User user) {
         this.category = category;
